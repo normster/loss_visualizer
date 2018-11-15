@@ -3,7 +3,6 @@ import copy
 import numpy as np
 import os
 import pickle
-import pdb
 
 import torch
 import torch.nn as nn
@@ -20,7 +19,7 @@ import resnet
 parser = argparse.ArgumentParser(description='ImageNet Resnet Loss Landscape')
 parser.add_argument('model1', type=str, help="Model1 checkpoint")
 parser.add_argument('model2', type=str, help="Model2 checkpoint")
-parser.add_argument('--batch-size', type=int, default=100)
+parser.add_argument('--batch-size', type=int, default=500)
 parser.add_argument('--viz-samples', type=int, default=200, help="# of interpolants to sample")
 parser.add_argument('--data-dir', type=str, default='/rscratch/imagenet12_data')
 parser.add_argument('--output-dir', type=str, default='output')
@@ -134,6 +133,8 @@ def test(loader, model, criterion, samples):
     total_acc = 0
     total = 0
 
+    display_freq = samples // 5
+
     for inputs, targets in loader:
         if total >= samples:
             break
@@ -145,8 +146,11 @@ def test(loader, model, criterion, samples):
         acc = accuracy(outputs, targets)[0]
 
         total_loss += loss.item()
-        total_acc += acc
+        total_acc += acc.item()
         total += targets.size(0)
+
+        if total % display_freq == 0:
+            print("\tLoss: {:.5f}\tAcc: {:.3f}".format(total_loss / total, 100 * total_acc / total))
 
     return total_loss / total, 100 * total_acc / total 
 
@@ -161,12 +165,6 @@ valdir = os.path.join(args.data_dir, 'val')
 
 normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406],
                                  std=[0.229, 0.224, 0.225])
-transform_train=transforms.Compose([
-        transforms.RandomResizedCrop(224,scale=(0.1,1.0)),
-        transforms.RandomHorizontalFlip(),
-        transforms.ToTensor(),
-        normalize,
-    ])
 transform_test = transforms.Compose([
             transforms.Resize(256),
             transforms.CenterCrop(224),
@@ -174,14 +172,13 @@ transform_test = transforms.Compose([
             normalize,
         ])
 
-trainset = datasets.ImageFolder(traindir, transform_train)
+trainset = datasets.ImageFolder(traindir, transform_test)
 testset = datasets.ImageFolder(valdir, transform_test)
 
-trainloader = torch.utils.data.DataLoader(trainset, batch_size=args.batch_size, shuffle=True, pin_memory=True, num_workers=30)
+trainloader = torch.utils.data.DataLoader(trainset, batch_size=args.batch_size, shuffle=False, pin_memory=True, num_workers=30)
 testloader = torch.utils.data.DataLoader(testset, batch_size=args.batch_size, shuffle=False, pin_memory=True, num_workers=30)
 
 print('Loading models')
-pdb.set_trace()
 
 model = getattr(resnet, args.arch)
 model1 = model()
@@ -192,9 +189,6 @@ checkpoint2 = torch.load(args.model2)
 
 model1.load_state_dict(checkpoint1['state_dict'])
 model2.load_state_dict(checkpoint2['state_dict'])
-
-model1 = model1.to(device)
-model2 = model2.to(device)
 
 visualize(model1, model2, testloader, trainloader, args.viz_samples, args.test_samples)
 
