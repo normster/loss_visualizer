@@ -3,6 +3,7 @@ import copy
 import numpy as np
 import os
 import pickle
+import pdb
 
 import torch
 import torch.nn as nn
@@ -36,6 +37,14 @@ if not args.disable_cuda and torch.cuda.is_available():
 else:
     device = torch.device("cpu")
 
+def mkdir_p(path):
+    try:
+        os.makedirs(path)
+    except OSError as exc:
+        if exc.errno == errno.EEXIST and os.path.isdir(path):
+            pass
+        else:
+            raise
 
 def accuracy(output, target, topk=(1,)):
     """Computes the precision@k for the specified values of k"""
@@ -74,11 +83,13 @@ def visualize(model1, model2, testloader, trainloader, viz_samples, test_samples
 
     criterion = nn.CrossEntropyLoss()
     for i, alpha in enumerate(alphas):
-        print("Testing perturbation {}/{}".format(i+1, viz_samples))
-        interpolant = interpolate(model1, model2, alpha)
+        print("\nTesting perturbation {}/{}".format(i+1, viz_samples))
+        interpolant = interpolate(model1, model2, alpha).to(device)
 
         test_loss, test_acc = test(testloader, interpolant, criterion, test_samples)
         train_loss, train_acc = test(trainloader, interpolant, criterion, test_samples)
+
+        print("Test loss: {:.5f}\tTest acc: {:.3f}\tTrain loss: {:.5f}\tTrain acc: {:.3f}".format(test_loss, test_acc, train_loss, train_acc))
         
         test_losses.append(test_loss)
         test_acces.append(test_acc)
@@ -140,7 +151,10 @@ def test(loader, model, criterion, samples):
     return total_loss / total, 100 * total_acc / total 
 
 
-print('Loading data')
+if not os.path.isdir(args.output_dir):
+    mkdir_p(args.output_dir)
+
+print('\nLoading data')
 
 traindir = os.path.join(args.data_dir, 'train')
 valdir = os.path.join(args.data_dir, 'val')
@@ -167,6 +181,7 @@ trainloader = torch.utils.data.DataLoader(trainset, batch_size=args.batch_size, 
 testloader = torch.utils.data.DataLoader(testset, batch_size=args.batch_size, shuffle=False, pin_memory=True, num_workers=30)
 
 print('Loading models')
+pdb.set_trace()
 
 model = getattr(resnet, args.arch)
 model1 = model()
