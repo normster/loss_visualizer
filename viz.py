@@ -19,7 +19,7 @@ import resnet
 parser = argparse.ArgumentParser(description='ImageNet Resnet Loss Landscape')
 parser.add_argument('model1', type=str, help="Model1 checkpoint")
 parser.add_argument('model2', type=str, help="Model2 checkpoint")
-parser.add_argument('--batch-size', type=int, default=500)
+parser.add_argument('--batch-size', type=int, default=100)
 parser.add_argument('--viz-samples', type=int, default=200, help="# of interpolants to sample")
 parser.add_argument('--data-dir', type=str, default='/rscratch/imagenet12_data')
 parser.add_argument('--output-dir', type=str, default='output')
@@ -63,13 +63,15 @@ def accuracy(output, target, topk=(1,)):
 
 def interpolate(model1, model2, alpha):
     ret = copy.deepcopy(model1)
+    
+    ret_dict = ret.state_dict()
+    dict1 = model1.state_dict()
+    dict2 = model2.state_dict()
 
-    for param1, param2 in zip(ret.parameters(), model2.parameters()):
-        param1.requires_grad = False
-        param1.data = alpha * param1.data + (1 - alpha) * param2.data
+    for k in ret_dict:
+        ret_dict[k] = alpha * dict1[k] + (1 - alpha) * dict2[k]
 
     return ret
-
 
 def visualize(model1, model2, testloader, trainloader, viz_samples, test_samples):
     test_losses = []
@@ -130,7 +132,7 @@ def test(loader, model, criterion, samples):
     model.eval()
    
     total_loss = 0.
-    total_acc = 0
+    total_acc = 0.
     total = 0
 
     display_freq = samples // 5
@@ -171,12 +173,18 @@ transform_test = transforms.Compose([
             transforms.ToTensor(),
             normalize,
         ])
+transform_train=transforms.Compose([
+        transforms.RandomResizedCrop(224, scale=(0.1,1.0)),
+        transforms.RandomHorizontalFlip(),
+        transforms.ToTensor(),
+        normalize,
+    ])
 
-trainset = datasets.ImageFolder(traindir, transform_test)
+trainset = datasets.ImageFolder(traindir, transform_train)
 testset = datasets.ImageFolder(valdir, transform_test)
 
-trainloader = torch.utils.data.DataLoader(trainset, batch_size=args.batch_size, shuffle=False, pin_memory=True, num_workers=30)
-testloader = torch.utils.data.DataLoader(testset, batch_size=args.batch_size, shuffle=False, pin_memory=True, num_workers=30)
+trainloader = torch.utils.data.DataLoader(trainset, batch_size=args.batch_size, shuffle=True, pin_memory=True, num_workers=30)
+testloader = torch.utils.data.DataLoader(testset, batch_size=args.batch_size, shuffle=True, pin_memory=True, num_workers=30)
 
 print('Loading models')
 
