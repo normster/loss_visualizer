@@ -20,7 +20,7 @@ parser = argparse.ArgumentParser(description='ImageNet Resnet Loss Landscape')
 parser.add_argument('model1', type=str, help="Model1 checkpoint")
 parser.add_argument('model2', type=str, help="Model2 checkpoint")
 parser.add_argument('--batch-size', type=int, default=100)
-parser.add_argument('--viz-samples', type=int, default=200, help="# of interpolants to sample")
+parser.add_argument('--viz-samples', type=int, default=100, help="# of interpolants to sample")
 parser.add_argument('--data-dir', type=str, default='/rscratch/imagenet12_data')
 parser.add_argument('--output-dir', type=str, default='output')
 parser.add_argument('--arch', type=str, default='resnet18', choices=['resnet18', 'resnet34', 'resnet50', 'resnet101', 'resnet152'], help="ResNet architecture")
@@ -58,6 +58,7 @@ def accuracy(output, target, topk=(1,)):
         for k in topk:
             correct_k = correct[:k].view(-1).float().sum(0, keepdim=True)
             res.append(correct_k)
+
         return res
 
 
@@ -71,14 +72,19 @@ def interpolate(model1, model2, alpha):
     for k in ret_dict:
         ret_dict[k] = alpha * dict1[k] + (1 - alpha) * dict2[k]
 
+    ret.load_state_dict(ret_dict)
     return ret
 
-def visualize(model1, model2, testloader, trainloader, viz_samples, test_samples):
+
+def visualize(model1, model2, testloader, trainloader, trainloader2, viz_samples, test_samples):
     test_losses = []
     test_acces = []
 
     train_losses = []
     train_acces = []
+
+    train2_losses = []
+    train2_acces = []
 
     alphas = np.linspace(-1, 2, num=viz_samples)
 
@@ -89,8 +95,10 @@ def visualize(model1, model2, testloader, trainloader, viz_samples, test_samples
 
         test_loss, test_acc = test(testloader, interpolant, criterion, test_samples)
         train_loss, train_acc = test(trainloader, interpolant, criterion, test_samples)
+        train2_loss, train2_acc = test(trainloader2, interpolant, criterion, test_samples)
 
-        print("Test loss: {:.5f}\tTest acc: {:.3f}\tTrain loss: {:.5f}\tTrain acc: {:.3f}".format(test_loss, test_acc, train_loss, train_acc))
+        print("Test loss: {:.5f}\tTest acc: {:.3f}\tTrain loss: {:.5f}\tTrain acc: {:.3f}\tTrain2 loss: {:.5f}\tTrain2 acc: {:.3f}"\
+                .format(test_loss, test_acc, train_loss, train_acc, train2_loss, train2_acc))
         
         test_losses.append(test_loss)
         test_acces.append(test_acc)
@@ -98,17 +106,23 @@ def visualize(model1, model2, testloader, trainloader, viz_samples, test_samples
         train_losses.append(train_loss)
         train_acces.append(train_acc)
 
+        train2_losses.append(train2_loss)
+        train2_acces.append(train2_acc)
+
     with open(os.path.join(args.output_dir, "raw_arrays"), "wb") as f:
         d = {
                 "test loss": test_losses,
                 "test accuracy": test_acces,
                 "train loss": train_losses,
                 "train accuracy": train_acces,
+                "train2 loss": train2_losses,
+                "train2 accuracy": train2_acces,
             }
         pickle.dump(d, f)
 
-    plt.plot(alphas, train_losses, label="Train Loss")
     plt.plot(alphas, test_losses, label="Test Loss")
+    plt.plot(alphas, train_losses, label="Train Loss")
+    plt.plot(alphas, train2_losses, label="Train2 Loss")
     plt.xlabel(u"\u03B1 (\u03B8' = \u03B1 * w1 + (1 - \u03B1) * w2)")
     plt.ylabel("Cross Entropy Loss")
     plt.yscale('log')
@@ -118,8 +132,9 @@ def visualize(model1, model2, testloader, trainloader, viz_samples, test_samples
 
     plt.clf()
 
-    plt.plot(alphas, train_acces, label="Train Acc")
     plt.plot(alphas, test_acces, label="Test Acc")
+    plt.plot(alphas, train_acces, label="Train Acc")
+    plt.plot(alphas, train2_acces, label="Train2 Acc")
     plt.xlabel(u"\u03B1 (\u03B8' = \u03B1 * w1 + (1 - \u03B1) * w2)")
     plt.ylabel("Top 1 Accuracy %")
     plt.axis([-1, 2, 0, 100]) 
@@ -180,11 +195,20 @@ transform_train=transforms.Compose([
         normalize,
     ])
 
+transform_train2 =transforms.Compose([
+        transforms.RandomResizedCrop(224),
+        transforms.RandomHorizontalFlip(),
+        transforms.ToTensor(),
+        normalize,
+    ])
+
 trainset = datasets.ImageFolder(traindir, transform_train)
+trainset2 = datasets.ImageFolder(traindir, transform_train2)
 testset = datasets.ImageFolder(valdir, transform_test)
 
-trainloader = torch.utils.data.DataLoader(trainset, batch_size=args.batch_size, shuffle=True, pin_memory=True, num_workers=30)
-testloader = torch.utils.data.DataLoader(testset, batch_size=args.batch_size, shuffle=True, pin_memory=True, num_workers=30)
+trainloader = torch.utils.data.DataLoader(trainset, batch_size=args.batch_size, shuffle=True, num_workers=30)
+trainloader2 = torch.utils.data.DataLoader(trainset2, batch_size=args.batch_size, shuffle=True, num_workers=30)
+testloader = torch.utils.data.DataLoader(testset, batch_size=args.batch_size, shuffle=True, num_workers=30)
 
 print('Loading models')
 
@@ -198,5 +222,5 @@ checkpoint2 = torch.load(args.model2)
 model1.load_state_dict(checkpoint1['state_dict'])
 model2.load_state_dict(checkpoint2['state_dict'])
 
-visualize(model1, model2, testloader, trainloader, args.viz_samples, args.test_samples)
+visualize(model1, model2, testloader, trainloader, trainloader2, args.viz_samples, args.test_samples)
 
