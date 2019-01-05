@@ -1,0 +1,3 @@
+[submodule "cifar_models"]
+	path = cifar_models
+	url = git@github.com:normster/pytorch_cifar_models
